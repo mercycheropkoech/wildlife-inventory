@@ -1,11 +1,12 @@
-import { useState } from "react";
-import { db, storage, auth } from "../firebase/firebase";
-import { addDoc, collection, serverTimestamp } from "firebase/firestore";
+import { useEffect, useState } from "react";
+import { storage } from "../firebase/firebase";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 
 export default function AddAnimal() {
   const navigate = useNavigate();
+  const { user, loading: authLoading } = useAuth();
   const [form, setForm] = useState({
     name: "",
     species: "",
@@ -29,13 +30,49 @@ export default function AddAnimal() {
     }
   };
 
+  const addAnimalRest = async (payload) => {
+    const idToken = await user.getIdToken();
+    const projectId = import.meta.env.VITE_PROJECT_ID;
+    const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/animals`;
+
+    const body = {
+      fields: {
+        name: { stringValue: payload.name },
+        species: { stringValue: payload.species },
+        location: { stringValue: payload.location },
+        description: { stringValue: payload.description },
+        imageUrl: { stringValue: payload.imageUrl || "" },
+        userId: { stringValue: payload.userId },
+        userEmail: { stringValue: payload.userEmail || "" },
+        createdAt: { timestampValue: payload.createdAt },
+        localId: { stringValue: String(payload.localId) },
+      },
+    };
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${idToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Firestore REST error ${response.status}: ${errorText}`);
+    }
+
+    return response.json();
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setStatus("");
     setLoading(true);
 
     console.log("Form data:", form);
-    console.log("Auth user:", auth.currentUser);
+    console.log("Auth user:", user);
 
     if (!form.name || !form.species || !form.location) {
       setStatus("Please fill in name, species, and location.");
@@ -43,38 +80,47 @@ export default function AddAnimal() {
       return;
     }
 
-    if (!auth.currentUser) {
+    if (!user) {
       setStatus("❌ You must be logged in to add an animal. Please log in first.");
       setLoading(false);
       return;
     }
 
+    let localPayload = {
+      localId: Date.now(),
+      name: form.name,
+      species: form.species,
+      location: form.location,
+      description: form.description,
+      imageUrl: "",
+      userId: user.uid,
+      userEmail: user.email,
+      createdAt: new Date().toISOString(),
+    };
+
     try {
       let imageUrl = "";
 
-      // Upload image if provided
+      // Upload image if provided (best-effort; continue on failure)
       if (imageFile) {
-        setStatus("Uploading image...");
-        const imageRef = ref(storage, `animals/${Date.now()}_${imageFile.name}`);
-        const snapshot = await uploadBytes(imageRef, imageFile);
-        imageUrl = await getDownloadURL(snapshot.ref);
-        console.log("Image uploaded:", imageUrl);
+        try {
+          setStatus("Uploading image...");
+          const imageRef = ref(storage, `animals/${Date.now()}_${imageFile.name}`);
+          const snapshot = await uploadBytes(imageRef, imageFile);
+          imageUrl = await getDownloadURL(snapshot.ref);
+          localPayload.imageUrl = imageUrl;
+          console.log("Image uploaded:", imageUrl);
+        } catch (imgErr) {
+          console.warn("Image upload failed, continuing without image:", imgErr);
+          setStatus("Image upload failed — saving without image...");
+        }
       }
 
-      setStatus("Saving animal data...");
-      // Save animal data to Firestore
-      const docRef = await addDoc(collection(db, "animals"), {
-        name: form.name,
-        species: form.species,
-        location: form.location,
-        description: form.description,
-        imageUrl: imageUrl,
-        userId: auth.currentUser.uid,
-        userEmail: auth.currentUser.email,
-        createdAt: serverTimestamp(),
-      });
+      setStatus("Saving animal data... This may take a few moments if your connection is slow.");
 
-      console.log("Animal saved with ID:", docRef.id);
+      const restResult = await addAnimalRest(localPayload);
+      console.log("Animal saved via REST:", restResult.name);
+
       setStatus("✓ Animal saved successfully!");
       setForm({ name: "", species: "", location: "", description: "" });
       setImageFile(null);
@@ -84,15 +130,50 @@ export default function AddAnimal() {
       setTimeout(() => {
         navigate("/dashboard");
       }, 1500);
-    } catch (error) {
-      console.error("Detailed error saving animal:", error);
-      console.error("Error code:", error.code);
-      console.error("Error message:", error.message);
-      setStatus(`❌ Error: ${error.message}`);
+    } catch (saveErr) {
+      console.warn("Save to Firestore failed, storing locally:", saveErr);
+      // store locally so user doesn't lose data
+      try {
+        const pendingRaw = localStorage.getItem("animals:pending");
+        const pending = pendingRaw ? JSON.parse(pendingRaw) : [];
+        pending.unshift(localPayload);
+        localStorage.setItem("animals:pending", JSON.stringify(pending));
+
+        if (saveErr?.message?.includes("SERVICE_DISABLED")) {
+          setStatus("❌ Firestore API is currently disabled for this project. Animal saved locally.");
+        } else {
+          setStatus("Saved locally (offline or error). You can push pending items from the Dashboard.");
+        }
+
+        // clear form so user can continue
+        setForm({ name: "", species: "", location: "", description: "" });
+        setImageFile(null);
+        setImagePreview("");
+        setTimeout(() => {
+          navigate("/dashboard");
+        }, 1200);
+      } catch (localErr) {
+        console.error("Failed to save locally:", localErr);
+        setStatus(`❌ Error saving locally: ${localErr?.message || localErr}`);
+      }
     } finally {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!authLoading && !user) {
+      navigate("/login");
+    }
+  }, [authLoading, user, navigate]);
+
+  if (authLoading) {
+    return (
+      <div className="mx-auto max-w-3xl p-6 text-center text-slate-600">
+        Loading authentication...
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-3xl p-6">

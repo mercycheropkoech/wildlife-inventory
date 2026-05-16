@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { db } from "../firebase/firebase";
-import { collection, deleteDoc, doc, onSnapshot } from "firebase/firestore";
+import { collection, deleteDoc, doc, onSnapshot, query, orderBy } from "firebase/firestore";
 import { useNavigate } from "react-router-dom";
 
 export default function Dashboard() {
@@ -10,10 +10,12 @@ export default function Dashboard() {
   const [stats, setStats] = useState({ animals: 0 });
   const [animals, setAnimals] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [pending, setPending] = useState([]);
 
   useEffect(() => {
-    // Set up real-time listener
-    const unsubscribe = onSnapshot(collection(db, "animals"), (snapshot) => {
+    // Set up real-time listener (newest first)
+    const q = query(collection(db, "animals"), orderBy("createdAt", "desc"));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
       try {
         const animalsList = snapshot.docs.map((doc) => ({
           id: doc.id,
@@ -31,6 +33,16 @@ export default function Dashboard() {
       setLoading(false);
     });
 
+    // Load pending local items
+    try {
+      const raw = localStorage.getItem("animals:pending");
+      const list = raw ? JSON.parse(raw) : [];
+      setPending(list);
+    } catch (e) {
+      console.warn("Failed to read pending animals from localStorage", e);
+      setPending([]);
+    }
+
     // Cleanup subscription on unmount
     return () => unsubscribe();
   }, []);
@@ -45,6 +57,42 @@ export default function Dashboard() {
         console.error("Error deleting animal:", error);
       }
     }
+  };
+
+  const pushPendingItem = async (item) => {
+    if (!user) throw new Error("You must be logged in to push pending items.");
+    const idToken = await user.getIdToken();
+    const projectId = import.meta.env.VITE_PROJECT_ID;
+    const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/animals`;
+    const body = {
+      fields: {
+        name: { stringValue: item.name },
+        species: { stringValue: item.species },
+        location: { stringValue: item.location },
+        description: { stringValue: item.description },
+        imageUrl: { stringValue: item.imageUrl || "" },
+        userId: { stringValue: user.uid },
+        userEmail: { stringValue: user.email || "" },
+        createdAt: { timestampValue: item.createdAt },
+        localId: { stringValue: String(item.localId) },
+      },
+    };
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${idToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Firestore REST error ${response.status}: ${errorText}`);
+    }
+
+    return response.json();
   };
 
   return (
@@ -79,12 +127,41 @@ export default function Dashboard() {
       <div className="mb-6">
         <div className="flex items-center justify-between">
           <h2 className="text-2xl font-bold text-slate-900">Animals Library</h2>
-          <button
-            onClick={() => navigate("/add-animal")}
-            className="rounded-full bg-cyan-600 px-6 py-2 text-sm font-semibold text-white hover:bg-cyan-700 transition"
-          >
-            + Add Animal
-          </button>
+          <div className="flex items-center gap-3">
+            {pending.length > 0 && (
+              <div className="text-sm text-slate-600">
+                {pending.length} pending saved locally
+              </div>
+            )}
+            <button
+              onClick={() => navigate("/add-animal")}
+              className="rounded-full bg-cyan-600 px-6 py-2 text-sm font-semibold text-white hover:bg-cyan-700 transition"
+            >
+              + Add Animal
+            </button>
+            {pending.length > 0 && (
+              <button
+                onClick={async () => {
+                  if (!user) return navigate('/login');
+                  if (!confirm('Push pending items to Firestore now?')) return;
+                  try {
+                    for (const it of pending) {
+                      await pushPendingItem(it);
+                    }
+                    localStorage.removeItem('animals:pending');
+                    setPending([]);
+                    alert('Pushed pending items to Firestore.');
+                  } catch (err) {
+                    console.error('Failed to push pending items', err);
+                    alert('Failed to push pending items. See console for details.');
+                  }
+                }}
+                className="rounded-full bg-amber-500 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-600 transition"
+              >
+                Push pending
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
