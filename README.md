@@ -1,18 +1,93 @@
-# React + Vite
+# Wildlife Management System
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+- A web-based Wildlife Management System built using React, Firebase, and modern web technologies. The system helps manage wildlife records, track animal data, and support conservation efforts through a simple dashboard interface
 
-Currently, two official plugins are available:
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+link: https://wildlife-management-62a6e.web.app
 
-## React Compiler
+# Features
+- User Authentication (Login / Sign Up)
+- Add, edit, and delete wildlife records
+- Dashboard for viewing animal data
+- Search and filter wildlife entries
+- Cloud storage using Firebase
+- Responsive design for mobile and desktop
+- Tech Stack
 
-The React Compiler is enabled on this template. See [this documentation](https://react.dev/learn/react-compiler) for more information.
+# Frontend:
 
-Note: This will impact Vite dev & build performances.
+- React (Vite)
+- HTML
+- CSS
+- JavaScript
 
-## Expanding the ESLint configuration
+# Backend / Database:
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+- Firebase (Authentication + Firestore)
+
+# Hosting:
+
+- Firebase Hosting
+## Project Structure
+- wildlife-management/
+- │
+- ├── public/
+- ├── src/
+- │   ├── components/
+- │   ├── pages/
+- │   ├── firebase/
+- │   ├── App.jsx
+- │   └── main.jsx
+- │
+- ├── firebase.json
+- ├── package.json
+- └── README.md
+# Installation & Setup
+1. Clone the repository
+git clone https://github.com/your-username/wildlife-management.git
+cd wildlife-management
+2. Install dependencies
+npm install
+3. Setup Firebase
+
+Create a file:
+
+src/firebase/firebaseConfig.js
+
+Add your Firebase config:
+
+const firebaseConfig = {
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_AUTH_DOMAIN",
+  projectId: "YOUR_PROJECT_ID",
+  storageBucket: "YOUR_STORAGE_BUCKET",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId: "YOUR_APP_ID"
+};
+
+export default firebaseConfig;
+4. Run the project locally
+npm run dev
+Deployment
+Build project
+npm run build
+Deploy to Firebase
+firebase deploy
+Common Issues
+Firebase error: auth/configuration-not-found
+Go to Firebase Console
+Enable Authentication → Email/Password
+Make sure your config values are correct
+Project not showing in Firebase CLI
+firebase login
+firebase projects:list
+
+Make sure you're using the correct Google account.
+
+# Author
+
+- Mercy Cherop
+
+# License
+
+This project is for educational purposes only.
